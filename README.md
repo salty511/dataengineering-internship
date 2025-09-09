@@ -4,13 +4,12 @@
 
 ### Clickstream
 
-user_id: int\\
-session_id: string\\
+user_id: int\
+session_id: string\
 page_url: string - ['/home', '/product/alpha', '/checkout', '/product/beta', '/cart',
        				'/', '/product/gamma', '/search?q=data', '/docs/getting-started',
-       				'/pricing']\\
-click_time: datetime string
-
+       				'/pricing']\
+click_time: datetime string\
 device: string - ['desktop', 'mobile', 'tablet']
 
 location: string - ['DE', 'AU', 'GB', 'ZA', 'BR', 'JP', 'CA', 'FR', 'US', 'IN']
