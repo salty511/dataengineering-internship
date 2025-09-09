@@ -30,8 +30,8 @@ No null values
 ## Pipeline 
 
 Sources: data/raw/*\
-ETL Scripts: src\
-Stored: GCS\
+ETL Scripts: src/*\
+Store: GCS
 
 ![alt text](media/pipeline-diagram.png "Pipeline Diagram")
 
