@@ -26,3 +26,15 @@ txn_time: datetime string
 
 No duplicates on txn_id
 No null values
+
+## Pipeline 
+
+Sources: data/raw/*
+ETL Scripts: src
+Stored: GCS
+
+![alt text](media/pipline-diagram.png "Pipeline Diagram")
+
+## GCS Bucket
+
+![alt text](media/gcs-bucket-screenshot.png "GCS Bucket screenshot")
