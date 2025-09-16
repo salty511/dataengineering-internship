@@ -19,8 +19,7 @@ def clean_data(subset: list, dataset: str, DATA_DIR) -> str:
 	'''
 
 	# Remove old cleaned file if it exists
-	if os.path.exists(f"{DATA_DIR}/cleaned/{dataset}.csv"):
-		os.remove(f"{DATA_DIR}/cleaned/{dataset}.csv")
+	remove_file_if_exists(f"{DATA_DIR}/cleaned/{dataset}.csv")
 
 	rowCount = 0
 	duplicates = 0
@@ -47,8 +46,43 @@ def clean_data(subset: list, dataset: str, DATA_DIR) -> str:
 		Null values: {nulls}
 	'''
 
+def remove_file_if_exists(file_path: str) -> None:
+	if os.path.exists(file_path):
+		os.remove(file_path)
+
+def validate(DATA_DIR) -> bool:
+	''' Validates the transformed datasets for duplicates and null values.
+	Args:
+		DATA_DIR (str): Directory where data is stored.
+	Returns:
+		bool: True if data is valid, False otherwise.
+	'''
+
+	clickstream_df = pd.read_csv(f"{DATA_DIR}/transformed/clickstream_utc.csv")
+	transactions_df = pd.read_csv(f"{DATA_DIR}/transformed/transactions_usd.csv")
+	output = True
+
+	if clickstream_df["session_id"].duplicated().values.any(): 
+		print("Duplicates found in clickstream session_id")
+		output = False
+	if transactions_df["txn_id"].duplicated().values.any(): 
+		print("Duplicates found in transactions txn_id")
+		output = False
+	if clickstream_df.isnull().values.any(): 
+		print("Null values found in clickstream")
+		output = False
+	if transactions_df.isnull().values.any(): 
+		print("Null values found in transactions")
+		output = False
+	
+	return output
+
 @dag(schedule="@daily", start_date=datetime(2021, 12, 1), catchup=False)
 def taskflow():
+	''' ETL Pipeline using Airflow TaskFlow API.
+	Extracts data from local CSV files, cleans and transforms it, and loads it into partitioned directories.
+	'''
+	
 	DATA_DIR = os.getenv("DATA_DIR")
 	logging.debug(f"Data directory: {DATA_DIR}")
 
@@ -64,6 +98,11 @@ def taskflow():
 
 	@task(task_id="ingest_currency_api", retries=2)
 	def ingest_currency_api() -> Dict[str, float]:
+		''' Fetches currency exchange rates from a remote API.
+		Returns:
+			Dict[str, float]: A dictionary of currency codes and their exchange rates to USD.
+		'''
+		
 		API_KEY = os.getenv("API_KEY")
 		logging.info(f"API Key: {API_KEY}")
 
@@ -83,11 +122,8 @@ def taskflow():
 	@task(task_id="transform")
 	def transform(exchange_rates) -> None:
 		# Remove old transformed files if they exist
-		if os.path.exists(f"{DATA_DIR}/transformed/clickstream_utc.csv"):
-			os.remove(f"{DATA_DIR}/transformed/clickstream_utc.csv")
-
-		if os.path.exists(f"{DATA_DIR}/transformed/transactions_usd.csv"):
-			os.remove(f"{DATA_DIR}/transformed/transactions_usd.csv")
+		remove_file_if_exists(f"{DATA_DIR}/transformed/clickstream_utc.csv")
+		remove_file_if_exists(f"{DATA_DIR}/transformed/transactions_usd.csv")
 
 
 		clickstream_iter = pd.read_csv(f"{DATA_DIR}/cleaned/clickstream.csv", chunksize=1000)
@@ -119,7 +155,22 @@ def taskflow():
 		''')
 		return
 
+	@task(task_id="load")
+	def load(valid) -> None:
+		if valid:
+			# Partition data by date
+			partition_date = datetime.now().strftime("%Y-%m-%d")
+			logging.info(f"Loading data for partition date: {partition_date}")
+			os.makedirs(f"{DATA_DIR}/final/{partition_date}", exist_ok=True)
+			remove_file_if_exists(f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv")
+			remove_file_if_exists(f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv")
 
-	[ingest_clickstream(), ingest_transactions()] >> transform(ingest_currency_api())
+			os.replace(f"{DATA_DIR}/transformed/clickstream_utc.csv", f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv")
+			os.replace(f"{DATA_DIR}/transformed/transactions_usd.csv", f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv")
+			logging.info(f"Data loaded to {DATA_DIR}/final/{partition_date}/")
+		else:
+			logging.error("Data validation failed. Load operation aborted.")
+		
+	[ingest_clickstream(), ingest_transactions()] >> transform(ingest_currency_api()) >> load(validate(DATA_DIR))
 
 taskflow()
