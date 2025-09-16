@@ -10,7 +10,7 @@ The data for this project is contained within `data/raw/` and represents clickst
 
 #### Clickstream
 
-```json
+```
 clickstream: {
 	user_id: Int,
 	session_id: String,
@@ -38,7 +38,7 @@ No null values
 
 #### Transactions
 
-```json
+```
 transactions: {
 	txn_id: String,
 	user_id: Int,

@@ -1,1 +1,14 @@
+# Environment Variables
 .env
+
+# Data Exploration Notebook
+data-exploration.ipynb
+
+# Local Composer Environment
+composer
+
+# Python Virtual Environment
+.venv
+
+# Pychache
+week2_orchestration/dags/__pycache__
