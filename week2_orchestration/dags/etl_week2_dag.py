@@ -80,6 +80,46 @@ def taskflow():
 			logging.error("API Error:", data)
 			return {}
 
-	[ingest_clickstream(), ingest_transactions()] >> ingest_currency_api()
+	@task(task_id="transform")
+	def transform(exchange_rates) -> None:
+		# Remove old transformed files if they exist
+		if os.path.exists(f"{DATA_DIR}/transformed/clickstream_utc.csv"):
+			os.remove(f"{DATA_DIR}/transformed/clickstream_utc.csv")
+
+		if os.path.exists(f"{DATA_DIR}/transformed/transactions_usd.csv"):
+			os.remove(f"{DATA_DIR}/transformed/transactions_usd.csv")
+
+
+		clickstream_iter = pd.read_csv(f"{DATA_DIR}/cleaned/clickstream.csv", chunksize=1000)
+		rowCount_clickstream = 0
+
+		# Transform clickstream data
+		for chunk in clickstream_iter:
+			clickstream_df = chunk 
+			rowCount_clickstream += len(clickstream_df)
+			clickstream_df["click_time_utc"] = pd.to_datetime(clickstream_df["click_time"], utc=True)
+			clickstream_df.to_csv(f"{DATA_DIR}/transformed/clickstream_utc.csv", mode='a', index=False, header=not os.path.exists(f"{DATA_DIR}/transformed/clickstream_utc.csv"))
+		
+		transactions_iter = pd.read_csv(f"{DATA_DIR}/cleaned/transactions.csv", chunksize=1000)
+		rowCount_transactions = 0
+
+		# Transform transactions data
+		for chunk in transactions_iter:
+			transactions_df = chunk 
+			transactions_df["amount_usd"] = transactions_df.apply(
+				lambda row: round(row["amount"] / exchange_rates[row["currency"]], 2), axis=1
+			)
+			transactions_df["txn_time"] = pd.to_datetime(transactions_df["txn_time"], utc=True)
+			rowCount_transactions += len(transactions_df)
+			transactions_df.to_csv(f"{DATA_DIR}/transformed/transactions_usd.csv", mode='a', index=False, header=not os.path.exists(f"{DATA_DIR}/transformed/transactions_usd.csv"))
+
+		logging.info(f'''Data transformed and saved to {DATA_DIR}/transformed/(clickstream_utc.csv, transactions_usd.csv):
+			Clickstream rows processed: {rowCount_clickstream}
+			Transactions rows processed: {rowCount_transactions}
+		''')
+		return
+
+
+	[ingest_clickstream(), ingest_transactions()] >> transform(ingest_currency_api())
 
 taskflow()
