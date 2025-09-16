@@ -102,7 +102,7 @@ def taskflow():
 		Returns:
 			Dict[str, float]: A dictionary of currency codes and their exchange rates to USD.
 		'''
-		
+
 		API_KEY = os.getenv("API_KEY")
 		logging.info(f"API Key: {API_KEY}")
 
@@ -157,6 +157,7 @@ def taskflow():
 
 	@task(task_id="load")
 	def load(valid) -> None:
+		import shutil
 		if valid:
 			# Partition data by date
 			partition_date = datetime.now().strftime("%Y-%m-%d")
@@ -165,8 +166,8 @@ def taskflow():
 			remove_file_if_exists(f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv")
 			remove_file_if_exists(f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv")
 
-			os.replace(f"{DATA_DIR}/transformed/clickstream_utc.csv", f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv")
-			os.replace(f"{DATA_DIR}/transformed/transactions_usd.csv", f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv")
+			shutil.copy(f"{DATA_DIR}/transformed/clickstream_utc.csv", f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv")
+			shutil.copy(f"{DATA_DIR}/transformed/transactions_usd.csv", f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv")
 			logging.info(f"Data loaded to {DATA_DIR}/final/{partition_date}/")
 		else:
 			logging.error("Data validation failed. Load operation aborted.")
