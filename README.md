@@ -58,10 +58,6 @@ No null values
 
 The ETL pipeline extracts data from local and remote sources, performs cleaning and transformation operations and loads the data into GCS.
 
-### Extraction
-
-The data for this project are contained within local csv files in `data/raw/` however, we also need to get currency conversion rates for the transactions
-
 Sources: data/raw/*\
 ETL Scripts: src/*\
 Store: GCS
@@ -71,3 +67,18 @@ Store: GCS
 ## GCS Bucket
 
 ![alt text](media/gcs-bucket-screenshot.png "GCS Bucket screenshot")
+
+## DAG Orchestration
+
+Apache-airflow dag contained in `week2_orchestration/dags/etl_week2_dag.py` and outlines 5 tasks.
+
+![alt text](media/airflow-diagram.png "Airflow dag graph")
+
+ingest_transactions, ingest_currency_api: Reads data in chunks from data/raw/ files, de-duplicates and removes null values, saves files to data/cleaned/\
+ingest_clickstream: Reads data from the currency API, returns dictionary of currency paired with usd conversion\
+Transform: Transforms clickstream and transactions data in data/cleaned/ converting time values to UTC and adding transaction amounts converted to USD\
+Load: Validates data by checking for nulls or duplicates, then copies files to data/final directory and uploads them to gcs bucket partitioned by ingest date\
+
+Data is loaded to gcs bucket, partitioned by ingest date.
+
+![alt text](media/gcs-bucket-2.png "GCS Bucket Screenshot")

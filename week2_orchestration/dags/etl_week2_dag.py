@@ -62,10 +62,10 @@ def validate(DATA_DIR) -> bool:
 	transactions_df = pd.read_csv(f"{DATA_DIR}/transformed/transactions_usd.csv")
 	output = True
 
-	if clickstream_df["session_id"].duplicated().values.any(): 
+	if clickstream_df["session_id"].duplicated().any(): 
 		print("Duplicates found in clickstream session_id")
 		output = False
-	if transactions_df["txn_id"].duplicated().values.any(): 
+	if transactions_df["txn_id"].duplicated().any(): 
 		print("Duplicates found in transactions txn_id")
 		output = False
 	if clickstream_df.isnull().values.any(): 
@@ -124,8 +124,7 @@ def taskflow():
 		# Remove old transformed files if they exist
 		remove_file_if_exists(f"{DATA_DIR}/transformed/clickstream_utc.csv")
 		remove_file_if_exists(f"{DATA_DIR}/transformed/transactions_usd.csv")
-
-
+		
 		clickstream_iter = pd.read_csv(f"{DATA_DIR}/cleaned/clickstream.csv", chunksize=1000)
 		rowCount_clickstream = 0
 
@@ -145,7 +144,7 @@ def taskflow():
 			transactions_df["amount_usd"] = transactions_df.apply(
 				lambda row: round(row["amount"] / exchange_rates[row["currency"]], 2), axis=1
 			)
-			transactions_df["txn_time"] = pd.to_datetime(transactions_df["txn_time"], utc=True)
+			transactions_df["txn_time_utc"] = pd.to_datetime(transactions_df["txn_time"], utc=True)
 			rowCount_transactions += len(transactions_df)
 			transactions_df.to_csv(f"{DATA_DIR}/transformed/transactions_usd.csv", mode='a', index=False, header=not os.path.exists(f"{DATA_DIR}/transformed/transactions_usd.csv"))
 
@@ -156,8 +155,13 @@ def taskflow():
 		return
 
 	@task(task_id="load")
-	def load(valid) -> None:
+	def load(valid, gcs) -> None:
+		''' Loads validated data into partitioned directories by date and uploads to gcs.
+		Args:
+			valid (bool): Result of data validation.
+		'''
 		import shutil
+		from google.cloud import storage
 		if valid:
 			# Partition data by date
 			partition_date = datetime.now().strftime("%Y-%m-%d")
@@ -169,9 +173,23 @@ def taskflow():
 			shutil.copy(f"{DATA_DIR}/transformed/clickstream_utc.csv", f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv")
 			shutil.copy(f"{DATA_DIR}/transformed/transactions_usd.csv", f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv")
 			logging.info(f"Data loaded to {DATA_DIR}/final/{partition_date}/")
+
+			# Upload to GCS if active
+			if gcs:
+				storage_client = storage.Client()
+				bucket = storage_client.bucket("dataengineering-internship-test-bucket")
+				clickstream_blob = bucket.blob(f"{partition_date}/clickstream.csv")
+				transactions_blob = bucket.blob(f"{partition_date}/transactions.csv")
+
+				with open(f"{DATA_DIR}/final/{partition_date}/clickstream_utc.csv", "r") as f:
+					clickstream_blob.upload_from_string(f.read(), content_type="text/csv")
+
+				with open(f"{DATA_DIR}/final/{partition_date}/transactions_usd.csv", "r") as f:
+					transactions_blob.upload_from_string(f.read(), content_type="text/csv")
+
 		else:
 			logging.error("Data validation failed. Load operation aborted.")
 		
-	[ingest_clickstream(), ingest_transactions()] >> transform(ingest_currency_api()) >> load(validate(DATA_DIR))
+	[ingest_clickstream(), ingest_transactions()] >> transform(ingest_currency_api()) >> load(validate(DATA_DIR), True)
 
 taskflow()
