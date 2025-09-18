@@ -74,10 +74,13 @@ Apache-airflow dag contained in `week2_orchestration/dags/etl_week2_dag.py` and 
 
 ![alt text](media/airflow-diagram.png "Airflow dag graph")
 
-ingest_transactions, ingest_currency_api: Reads data in chunks from data/raw/ files, de-duplicates and removes null values, saves files to data/cleaned/\
-ingest_clickstream: Reads data from the currency API, returns dictionary of currency paired with usd conversion\
-Transform: Transforms clickstream and transactions data in data/cleaned/ converting time values to UTC and adding transaction amounts converted to USD\
-Load: Validates data by checking for nulls or duplicates, then copies files to data/final directory and uploads them to gcs bucket partitioned by ingest date\
+ingest_transactions, ingest_currency_api: Reads data in chunks from data/raw/ files, de-duplicates and removes null values, saves files to data/cleaned/
+
+ingest_clickstream: Reads data from the currency API, returns dictionary of currency paired with usd conversion
+
+transform: Transforms clickstream and transactions data in data/cleaned/ converting time values to UTC and adding transaction amounts converted to USD
+
+load: Validates data by checking for nulls or duplicates, then copies files to data/final directory and uploads them to gcs bucket partitioned by ingest date
 
 Data is loaded to gcs bucket, partitioned by ingest date.
 
