@@ -121,6 +121,11 @@ def taskflow():
 
 	@task(task_id="transform")
 	def transform(exchange_rates) -> None:
+		''' Transforms the cleaned datasets by converting datetime strings to UTC and converting transaction amounts to USD.
+		Args:
+			exchange_rates (Dict[str, float]): Currency exchange rates to USD.
+		'''
+
 		# Remove old transformed files if they exist
 		remove_file_if_exists(f"{DATA_DIR}/transformed/clickstream_utc.csv")
 		remove_file_if_exists(f"{DATA_DIR}/transformed/transactions_usd.csv")
