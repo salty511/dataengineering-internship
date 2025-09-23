@@ -12,3 +12,5 @@ composer
 
 # Pychache
 week2_orchestration/dags/__pycache__
+
+parquet/
