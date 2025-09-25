@@ -85,3 +85,17 @@ load: Validates data by checking for nulls or duplicates, then copies files to d
 Data is loaded to gcs bucket, partitioned by ingest date.
 
 ![alt text](media/gcs-bucket-2.png "GCS Bucket Screenshot")
+
+## Spark
+
+In `week3_spark_jobs` we adapt existing pipeline code to use pyspark for parallel data processing. Also script to load data into bigquery from gcs. Data is loaded as parquet, partitioned by the date component of event time, i.e. click_time/txn_time YYYY-MM-DD
+
+## Bigquery
+
+We load data into two bigquery tables, clickstream and transactions. Here is an example query to show daily active users by country. More queries contained within `queries/week3_analysis.sql`
+
+![alt text](media/bigquery.png "Bigquery example query")
+
+
+
+
