@@ -1,16 +1,18 @@
 import os
 from pyspark.sql import SparkSession
-import pyspark.pandas as ps
+from pyspark.sql import DataFrame as sdf
+import pyspark.sql.types as T
+from pyspark.sql.functions import udf
+import pandas as pd
 import sys
 import logging
 from dotenv import load_dotenv
 import pandas as pd
 import requests
-from google.cloud import storage
 
 load_dotenv()
 
-def clean_data(subset: list, df: ps.DataFrame, dataset: str) -> ps.DataFrame:
+def clean_data(subset: list, sdf: sdf, dataset: str) -> sdf:
 	''' Cleans the specified dataset by removing duplicates and null values.
 	Args:
 		subset (list): List of columns to check for duplicates.
@@ -19,43 +21,46 @@ def clean_data(subset: list, df: ps.DataFrame, dataset: str) -> ps.DataFrame:
 	Returns:
 		str: Summary of cleaning operation.
 	'''
+	sdf_out = sdf
+	rowCount = sdf.count()
 
 	# Clean data
-	df.dropna(inplace=True)
-	df.drop_duplicates(subset=subset, inplace=True)
-	
-	# Track stats
-	duplicates = df[subset].duplicated().sum()
-	nulls = df.isnull().sum().sum()
-	rowCount = len(df)
+	sdf_out = sdf.dropna()
+	nulls = rowCount - sdf_out.count()
+
+	sdf_out = sdf_out.dropDuplicates(subset=subset)
+	duplicates = rowCount - nulls - sdf_out.count()
 
 	logging.info(f'''{dataset.capitalize()} data cleaned:
 		Rows processed: {rowCount}
 		Duplicates on {subset}: {duplicates}
 		Null values: {nulls}
 	''')
-	return df
+	return sdf
 
-def transform(exchange_rates, transactions_df, clickstream_df) -> tuple[ps.DataFrame, ps.DataFrame]:
+
+def transform(spark, exchange_rates, transactions_df, clickstream_df) -> tuple[sdf, sdf]:
 	''' Transforms the cleaned datasets by converting datetime strings to UTC and converting transaction amounts to USD.
 	Args:
+		spark: SparkSession instance.
 		exchange_rates (Dict[str, float]): Currency exchange rates to USD.
 	'''
 
-	rowCount_clickstream = len(clickstream_df)
-	rowCount_transactions = len(transactions_df)
+	rowCount_clickstream = clickstream_df.count()
+	rowCount_transactions = transactions_df.count()
 
-	# Timestamp conversion to UTC
-	clickstream_df["click_time"] = ps.to_datetime(clickstream_df["click_time"], format="%Y-%m-%dT%H:%M:%SZ")
-	transactions_df["txn_time"] = ps.to_datetime(transactions_df["txn_time"], format="%Y-%m-%dT%H:%M:%SZ")
+	broadcast_rates = spark.sparkContext.broadcast(exchange_rates)
 
-	clickstream_df["partition_date"] = clickstream_df["click_time"].dt.date
-	transactions_df["partition_date"] = transactions_df["txn_time"].dt.date
+	def convert_to_usd(currency, amount):
+		rate = broadcast_rates.value.get(currency, 1.0)
+		return amount / rate if rate != 0 else 0.0
 
-	# Convert transaction amounts to USD
-	transactions_df["amount_usd"] = transactions_df.apply(
-		lambda row: round(row["amount"] / exchange_rates[row["currency"]], 2), axis=1
-	)
+	convert_udf = udf(convert_to_usd, T.FloatType())
+
+	clickstream_df = clickstream_df.withColumn("partition_date", clickstream_df["click_time"].cast("date"))
+	transactions_df = transactions_df.withColumn("partition_date", transactions_df["txn_time"].cast("date"))
+
+	transactions_df = transactions_df.withColumn("amount_usd", convert_udf("currency", "amount"))
 
 	logging.info(f'''Data transformed:
 		Clickstream rows processed: {rowCount_clickstream}
@@ -70,7 +75,6 @@ def ingest_currency_api() -> dict[str, float]:
 	'''
 
 	API_KEY = os.getenv("API_KEY")
-	logging.info(f"API Key: {API_KEY}")
 
 	url = f"https://v6.exchangerate-api.com/v6/{API_KEY}/latest/USD" 
 	response = requests.get(url) 
@@ -84,8 +88,9 @@ def ingest_currency_api() -> dict[str, float]:
 	else: 
 		logging.error("API Error:", data)
 		return {}
-	
-def read_gcs_file(bucket_name: str, file_path: str) -> pd.DataFrame:
+
+
+def read_gcs_file(bucket_name: str, file_path: str, spark, schema: str, gcs: bool) -> sdf:
 	''' Reads a CSV file from Google Cloud Storage into a pandas-on-Spark DataFrame.
 	Args:
 		bucket_name (str): Name of the GCS bucket.
@@ -93,46 +98,62 @@ def read_gcs_file(bucket_name: str, file_path: str) -> pd.DataFrame:
 	Returns:
 		pd.DataFrame: The loaded DataFrame.
 	'''
-	gcs_uri = f"gs://{bucket_name}/{file_path}"
-	logging.info(f"Reading file from GCS: {gcs_uri}")
-	df = pd.read_csv(gcs_uri)
-	return df
+	if gcs:
+		gcs_uri = f"gs://{bucket_name}/{file_path}"
 
-def buildSparkSession():
+		logging.info(f"Reading file from GCS: {gcs_uri}")
+
+		sdf = spark.read.csv(gcs_uri, header=True, schema=schema)
+
+		logging.info(f"File {file_path} opened successfully.")
+	else:
+		sdf = spark.read.csv(file_path, header=True, schema=schema)
+	return sdf
+
+def buildSparkSession(gcs):
 	import json
 	os.environ['PYSPARK_PYTHON'] = sys.executable
 	os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
 
-	with open('sparkconf.json', 'r') as f:
-		conf = json.load(f)
-
-	spark = SparkSession.builder\
+	if gcs:
+		spark = SparkSession.builder\
+		.appName("testApp").getOrCreate()
+		
+	else:
+		with open('sparkconf.json', 'r') as f:
+			conf = json.load(f)
+		spark = SparkSession.builder\
 		.appName("testApp").config(map=conf).getOrCreate()
-	
 	return spark
 
-def load_parquet_to_gcs(df: pd.DataFrame, dataset: str):
+def load_parquet_to_gcs(sdf: sdf, dataset: str):
 	''' Saves a pandas-on-Spark DataFrame as a Parquet file to Google Cloud Storage.
 	Args:
 		df (ps.DataFrame): The DataFrame to save.
-		dataset (str): Name of the dataset (without .csv extension).
+		dataset (str): Name of the dataset (without parquet extension).
 	'''
 
-	output_path = f"gs://dataengineering-internship-test-bucket/data/processed/{dataset}/"
-	df.to_parquet(output_path, partition_cols="partition_date", index=False, max_partitions=df["partition_date"].nunique())
+	output_path = f"gs://dataengineering-internship-test-bucket/data/processed/{dataset}.parquet/"
+	df = sdf.toPandas()
+	df["user_id"] = df["user_id"].astype("Int32")
+	df.to_parquet(output_path, partition_cols="partition_date", existing_data_behavior='overwrite_or_ignore')
 	logging.info(f"Saved {dataset} data to {output_path}")
 
 if __name__ == "__main__":
-	spark = buildSparkSession()
-	
-	transactions_df = ps.from_pandas(read_gcs_file("dataengineering-internship-test-bucket", "data/raw/transactions.csv"))
-	clickstream_df = ps.from_pandas(read_gcs_file("dataengineering-internship-test-bucket", "data/raw/clickstream.csv"))
+	logger = logging.getLogger()
+	logger.setLevel(logging.INFO)
+	gcs = os.getenv("GCS") == "True"
+	logging.info(f"Read from gcs: {gcs}")
+	spark = buildSparkSession(gcs)
 
-	transactions_df = clean_data(subset=["txn_id"], df=transactions_df, dataset="transactions")
-	clickstream_df = clean_data(subset=["user_id", "click_time"], df=clickstream_df, dataset="clickstream")
+	transactions_df = read_gcs_file("dataengineering-internship-test-bucket", "data/raw/transactions.csv", spark, gcs=gcs, schema="txn_id STRING, user_id INT, amount FLOAT, currency STRING, txn_time TIMESTAMP")
+	clickstream_df = read_gcs_file("dataengineering-internship-test-bucket", "data/raw/clickstream.csv", spark, gcs=gcs, schema="user_id INT, session_id STRING, page_url STRING, click_time TIMESTAMP, device STRING, location STRING")
+
+	transactions_df = clean_data(subset=["txn_id"], sdf=transactions_df, dataset="transactions")
+	clickstream_df = clean_data(subset=["session_id", "click_time"], sdf=clickstream_df, dataset="clickstream")
 
 	exchange_rates = ingest_currency_api()
-	clickstream_df, transactions_df = transform(exchange_rates, transactions_df, clickstream_df)
+	clickstream_df, transactions_df = transform(spark, exchange_rates, transactions_df, clickstream_df)
 
-	load_parquet_to_gcs(clickstream_df.to_pandas(), "clickstream.parquet")
-	load_parquet_to_gcs(transactions_df.to_pandas(), "transactions.parquet")
+	load_parquet_to_gcs(clickstream_df, "clickstream")
+	load_parquet_to_gcs(transactions_df, "transactions")
