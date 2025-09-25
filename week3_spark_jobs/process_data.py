@@ -127,15 +127,16 @@ def buildSparkSession(gcs):
 	return spark
 
 def load_parquet_to_gcs(sdf: sdf, dataset: str):
-	''' Saves a pandas-on-Spark DataFrame as a Parquet file to Google Cloud Storage.
+	''' Saves a DataFrame as a Parquet file to Google Cloud Storage.
 	Args:
-		df (ps.DataFrame): The DataFrame to save.
+		sdf : The DataFrame to save.
 		dataset (str): Name of the dataset (without parquet extension).
 	'''
 
 	output_path = f"gs://dataengineering-internship-test-bucket/data/processed/{dataset}.parquet/"
 	df = sdf.toPandas()
 	df["user_id"] = df["user_id"].astype("Int32")
+	logging.info(df.dtypes)
 	df.to_parquet(output_path, partition_cols="partition_date", existing_data_behavior='overwrite_or_ignore')
 	logging.info(f"Saved {dataset} data to {output_path}")
 

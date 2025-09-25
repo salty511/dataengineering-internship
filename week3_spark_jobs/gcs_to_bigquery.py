@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
 	table_id_cs = "dataengineering-internship.bigquery_testing.clickstream"
 	hive_partition_opts.source_uri_prefix = "gs://dataengineering-internship-test-bucket/data/processed/clickstream.parquet/"
-	cs_schema = client.schema_from_json("schemas/transactions.json")
+	cs_schema = client.schema_from_json("schemas/clickstream.json")
 
 	job_config_cs = bigquery.LoadJobConfig(
 		source_format=bigquery.SourceFormat.PARQUET,
@@ -33,20 +33,20 @@ if __name__ == "__main__":
 	uri_txn = "gs://dataengineering-internship-test-bucket/data/processed/transactions.parquet/*"
 	uri_cs = "gs://dataengineering-internship-test-bucket/data/processed/clickstream.parquet/*"
 
-	load_job = client.load_table_from_uri(
+	load_job_txn = client.load_table_from_uri(
 		uri_txn, table_id_txn, job_config=job_config_txn
 	)  # Make an API request.
 
-	load_job.result()  # Waits for the job to complete.
+	load_job_txn.result()  # Waits for the job to complete.
 
 	destination_table = client.get_table(table_id_txn)  # Make an API request.
 	print(f"Loaded {destination_table.num_rows} rows to {destination_table}")
 
-	load_job = client.load_table_from_uri(
+	load_job_cs = client.load_table_from_uri(
 		uri_cs, table_id_cs, job_config=job_config_cs
 	)  # Make an API request.
 
-	load_job.result()  # Waits for the job to complete.
+	load_job_cs.result()  # Waits for the job to complete.
 
 	destination_table = client.get_table(table_id_cs)  # Make an API request.
 	print(f"Loaded {destination_table.num_rows} rows to {destination_table}")
