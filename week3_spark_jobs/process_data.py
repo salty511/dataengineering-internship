@@ -16,7 +16,7 @@ def clean_data(subset: list, sdf: sdf, dataset: str) -> sdf:
 	''' Cleans the specified dataset by removing duplicates and null values.
 	Args:
 		subset (list): List of columns to check for duplicates.
-		df (ps.DataFrame): Input dataframe to be cleaned.
+		sdf (spark DataFrame): Input dataframe to be cleaned.
 		dataset (str): Name of the dataset (without .csv extension).
 	Returns:
 		str: Summary of cleaning operation.
@@ -95,8 +95,10 @@ def read_gcs_file(bucket_name: str, file_path: str, spark, schema: str, gcs: boo
 	Args:
 		bucket_name (str): Name of the GCS bucket.
 		file_path (str): Path to the file within the bucket.
+		spark: SparkSession instance
+		schema (str): schema string for DataFrame
 	Returns:
-		pd.DataFrame: The loaded DataFrame.
+		Spark DataFrame: The loaded DataFrame.
 	'''
 	if gcs:
 		gcs_uri = f"gs://{bucket_name}/{file_path}"
@@ -134,10 +136,7 @@ def load_parquet_to_gcs(sdf: sdf, dataset: str):
 	'''
 
 	output_path = f"gs://dataengineering-internship-test-bucket/data/processed/{dataset}.parquet/"
-	df = sdf.toPandas()
-	df["user_id"] = df["user_id"].astype("Int32")
-	logging.info(df.dtypes)
-	df.to_parquet(output_path, partition_cols="partition_date", existing_data_behavior='overwrite_or_ignore')
+	sdf.write.parquet(output_path, partitionBy="partition_date", mode='overwrite')
 	logging.info(f"Saved {dataset} data to {output_path}")
 
 if __name__ == "__main__":
@@ -156,5 +155,6 @@ if __name__ == "__main__":
 	exchange_rates = ingest_currency_api()
 	clickstream_df, transactions_df = transform(spark, exchange_rates, transactions_df, clickstream_df)
 
-	load_parquet_to_gcs(clickstream_df, "clickstream")
-	load_parquet_to_gcs(transactions_df, "transactions")
+	if gcs:
+		load_parquet_to_gcs(clickstream_df, "clickstream")
+		load_parquet_to_gcs(transactions_df, "transactions")
