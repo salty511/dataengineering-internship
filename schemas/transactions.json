@@ -1,0 +1,37 @@
+[
+  {
+    "mode": "NULLABLE",
+    "name": "txn_id",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "user_id",
+    "type": "INTEGER"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "amount",
+    "type": "FLOAT"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "currency",
+    "type": "STRING"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "txn_time",
+    "type": "INTEGER"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "amount_usd",
+    "type": "FLOAT"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "partition_date",
+    "type": "DATE"
+  }
+]
